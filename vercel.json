@@ -1,0 +1,4 @@
+{
+  "buildCommand": "node scripts/build-with-prisma.js && next build",
+  "installCommand": "npm install"
+}

@@ -1,0 +1,283 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Department {
+  id        String   @id @default(uuid()) @db.Char(36)
+  name      String   @db.VarChar(255)
+  headId    String?  @unique @map("head_id") @db.Char(36)
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  @@map("departments")
+
+  head   User?    @relation("DepartmentHead", fields: [headId], references: [id], onDelete: SetNull)
+  users  User[]   @relation("UserDepartment")
+  complaints Complaint[]
+  projects   Project[]
+  meetings   Meeting[]
+  bills      Bill[]
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Char(36)
+  name         String   @db.VarChar(255)
+  email        String   @unique @db.VarChar(255)
+  passwordHash String   @map("password_hash") @db.VarChar(255)
+  role         String   @db.VarChar(50)
+  departmentId String?  @map("department_id") @db.Char(36)
+  avatar       String?  @db.VarChar(512)
+  createdAt    DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  department        Department? @relation("UserDepartment", fields: [departmentId], references: [id], onDelete: SetNull)
+  headedDepartment  Department? @relation("DepartmentHead")
+  assignedComplaints Complaint[]
+  tasks             Task[]
+  submittedBills    Bill[]  @relation("BillSubmittedBy")
+  approvedBills     Bill[]  @relation("BillApprovedBy")
+  notifications     Notification[]
+  meetingParticipants MeetingParticipant[]
+  discussionPosts   DiscussionPost[]
+  salaries          WorkerSalary[]
+  @@map("users")
+}
+model Complaint {
+  id           String   @id @db.Char(10)
+  title        String   @db.VarChar(500)
+  description  String   @db.Text
+  category     String   @db.VarChar(100)
+  status       String   @default("submitted") @db.VarChar(50)
+  priority     String   @default("medium") @db.VarChar(20)
+  submittedBy  String   @map("submitted_by") @db.VarChar(255)
+  assignedTo   String?  @map("assigned_to") @db.Char(36)
+  departmentId String?  @map("department_id") @db.Char(36)
+  location     String?  @db.VarChar(500)
+  createdAt    DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  department  Department?           @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  assignee    User?                 @relation(fields: [assignedTo], references: [id], onDelete: SetNull)
+  attachments ComplaintAttachment[]
+  meetings    Meeting[]
+
+  @@map("complaints")
+}
+model ComplaintAttachment {
+  id          String   @id @default(uuid()) @db.Char(36)
+  complaintId String   @map("complaint_id") @db.Char(36)
+  fileUrl     String   @map("file_url") @db.VarChar(512)
+  fileName    String?  @map("file_name") @db.VarChar(255)
+  createdAt   DateTime @default(now()) @map("created_at") @db.DateTime(3)
+
+  complaint Complaint @relation(fields: [complaintId], references: [id], onDelete: Cascade)
+
+  @@map("complaint_attachments")
+}
+
+model Project {
+  id           String   @id @default(uuid()) @db.Char(36)
+  name         String   @db.VarChar(255)
+  departmentId String?  @map("department_id") @db.Char(36)
+  status       String   @default("active") @db.VarChar(20)
+  progress     Int      @default(0)
+  createdAt    DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  department Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  tasks      Task[]
+  @@map("projects")
+}
+
+model Task {
+  id          String   @id @default(uuid()) @db.Char(36)
+  title       String   @db.VarChar(500)
+  description String?  @db.Text
+  status      String   @default("todo") @db.VarChar(20)
+  priority    String   @default("medium") @db.VarChar(20)
+  assigneeId  String?  @map("assignee_id") @db.Char(36)
+  dueDate     DateTime? @map("due_date") @db.Date
+  projectId   String?  @map("project_id") @db.Char(36)
+  sortOrder   Int      @default(0) @map("sort_order")
+  createdAt   DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  assignee User?    @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
+  project Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@map("tasks")
+}
+
+model Meeting {
+  id           String   @id @default(uuid()) @db.Char(36)
+  title        String   @db.VarChar(255)
+  agenda       String?  @db.Text
+  meetingDate  DateTime @map("meeting_date") @db.Date
+  meetingTime  DateTime @map("meeting_time") @db.Time(0)
+  status       String   @default("scheduled") @db.VarChar(20)
+  departmentId String?  @map("department_id") @db.Char(36)
+  complaintId  String?  @map("complaint_id") @db.Char(10)
+  createdAt    DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  department   Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  complaint    Complaint?  @relation(fields: [complaintId], references: [id], onDelete: SetNull)
+  participants MeetingParticipant[]
+  discussions  Discussion[]
+  @@map("meetings")
+}
+
+model MeetingParticipant {
+  id        String   @id @default(uuid()) @db.Char(36)
+  meetingId String   @map("meeting_id") @db.Char(36)
+  userId    String   @map("user_id") @db.Char(36)
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(3)
+
+  meeting Meeting @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([meetingId, userId])
+  @@map("meeting_participants")
+}
+
+model Bill {
+  id           String   @id @default(uuid()) @db.Char(36)
+  title        String   @db.VarChar(255)
+  amount       Decimal  @db.Decimal(15, 2)
+  status       String   @default("pending") @db.VarChar(20)
+  submittedBy  String   @map("submitted_by") @db.Char(36)
+  approvedBy   String?  @map("approved_by") @db.Char(36)
+  departmentId String?  @map("department_id") @db.Char(36)
+  description  String?  @db.Text
+  createdAt    DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt    DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  department  Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  submitter   User        @relation("BillSubmittedBy", fields: [submittedBy], references: [id], onDelete: Restrict)
+  approver    User?       @relation("BillApprovedBy", fields: [approvedBy], references: [id], onDelete: SetNull)
+  payments    Payment[]
+  @@map("bills")
+}
+
+model Payment {
+  id        String   @id @default(uuid()) @db.Char(36)
+  billId    String   @map("bill_id") @db.Char(36)
+  amount    Decimal  @db.Decimal(15, 2)
+  status    String   @default("pending") @db.VarChar(20)
+  reference String?  @db.VarChar(255)
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(3)
+
+  bill Bill @relation(fields: [billId], references: [id], onDelete: Restrict)
+
+  @@map("payments")
+}
+
+model Notification {
+  id         String    @id @default(uuid()) @db.Char(36)
+  userId     String    @map("user_id") @db.Char(36)
+  title      String    @db.VarChar(500)
+  body       String?   @db.Text
+  type       String    @default("info") @db.VarChar(50)
+  readAt     DateTime? @map("read_at") @db.DateTime(3)
+  entityType String?   @map("entity_type") @db.VarChar(50)
+  entityId   String?   @map("entity_id") @db.Char(36)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.DateTime(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid()) @db.Char(36)
+  action     String   @db.VarChar(255)
+  userId     String?  @map("user_id") @db.Char(36)
+  userEmail  String?  @map("user_email") @db.VarChar(255)
+  entityType String?  @map("entity_type") @db.VarChar(50)
+  entityId   String?  @map("entity_id") @db.Char(36)
+  metadata   Json?
+  createdAt  DateTime @default(now()) @map("created_at") @db.DateTime(3)
+
+  @@map("audit_logs")
+}
+
+model Discussion {
+  id        String   @id @default(uuid()) @db.Char(36)
+  meetingId String   @map("meeting_id") @db.Char(36)
+  topic     String   @db.VarChar(500)
+  status    String   @default("open") @db.VarChar(20)
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  meeting Meeting          @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  posts   DiscussionPost[]
+  @@map("discussions")
+}
+
+model DiscussionPost {
+  id           String   @id @default(uuid()) @db.Char(36)
+  discussionId String   @map("discussion_id") @db.Char(36)
+  userId       String   @map("user_id") @db.Char(36)
+  content      String   @db.Text
+  createdAt    DateTime @default(now()) @map("created_at") @db.DateTime(3)
+
+  discussion Discussion @relation(fields: [discussionId], references: [id], onDelete: Cascade)
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("discussion_posts")
+}
+model Notice {
+  id          String   @id @default(uuid()) @db.Char(36)
+  title       String   @db.VarChar(500)
+  body        String?  @db.Text
+  type        String   @default("announcement") @db.VarChar(50)
+  pdfUrl      String?  @map("pdf_url") @db.VarChar(1000)
+  publishedAt DateTime @default(now()) @map("published_at") @db.DateTime(3)
+  createdAt   DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt   DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  @@map("notices")
+}
+model OtpVerification {
+  id        String   @id @default(uuid()) @db.Char(36)
+  phoneOrEmail String @map("phone_or_email") @db.VarChar(255)
+  otp       String   @db.VarChar(10)
+  expiresAt DateTime @map("expires_at") @db.DateTime(3)
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(3)
+
+  @@map("otp_verifications")
+}
+
+model WorkerSalary {
+  id          String   @id @default(uuid()) @db.Char(36)
+  workerId    String   @map("worker_id") @db.Char(36)
+  amount      Decimal  @db.Decimal(15, 2)
+  month       String   @db.VarChar(7)   // "YYYY-MM"
+  note        String?  @db.VarChar(500)
+  paidAt      DateTime @default(now()) @map("paid_at") @db.DateTime(3)
+  createdAt   DateTime @default(now()) @map("created_at") @db.DateTime(3)
+
+  worker User @relation(fields: [workerId], references: [id], onDelete: Cascade)
+
+  @@map("worker_salaries")
+}
+
+model HeroSlide {
+  id        String   @id @default(uuid()) @db.Char(36)
+  imageUrl  String   @map("image_url") @db.VarChar(512)
+  title     String?  @db.VarChar(255)
+  subtitle  String?  @db.VarChar(500)
+  linkUrl   String?  @map("link_url") @db.VarChar(255)
+  order     Int      @default(0)
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at") @db.DateTime(3)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.DateTime(3)
+
+  @@index([active, order])
+  @@map("hero_slides")
+}
