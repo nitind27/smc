@@ -5,10 +5,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Bell, CheckCheck, Loader2, MessageSquareWarning, Calendar,
   FileText, Info, AlertCircle, UserCheck, Briefcase, Megaphone,
-  Search, Filter, RefreshCw, X,
+  Search, Filter, RefreshCw, X, Send, Plus,
 } from "lucide-react";
 import { useFetch } from "@/hooks/use-fetch";
 import { useAuth } from "@/providers/auth-provider";
@@ -62,12 +65,22 @@ function formatFullDate(iso: string): string {
 
 export default function NotificationsPage() {
   const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
+
   const [typeFilter, setTypeFilter] = useState("all");
   const [readFilter, setReadFilter] = useState<"all" | "unread" | "read">("all");
   const [search, setSearch] = useState("");
   const [markingAll, setMarkingAll] = useState(false);
 
-  const isAdmin = user?.role === "admin";
+  // Send notification (admin only)
+  const [sendOpen, setSendOpen] = useState(false);
+  const [sendTitle, setSendTitle] = useState("");
+  const [sendBody, setSendBody] = useState("");
+  const [sendType, setSendType] = useState("info");
+  const [sendUserId, setSendUserId] = useState("all");
+  const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState("");
+  const { data: staffData } = useFetch<Array<{ id: string; name: string; role: string }>>(isAdmin ? "/api/staff" : null);
   const apiUrl = isAdmin
     ? "/api/notifications?all=true&limit=100"
     : `/api/notifications?userId=${user?.id ?? ""}&limit=100`;
@@ -125,6 +138,26 @@ export default function NotificationsPage() {
     await refetch();
   };
 
+  const sendNotification = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!sendTitle.trim()) { setSendError("Title is required"); return; }
+    setSendError(""); setSending(true);
+    try {
+      const targets = sendUserId === "all"
+        ? (staffData ?? []).map(s => s.id)
+        : [sendUserId];
+      for (const uid of targets) {
+        await fetch("/api/notifications", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: uid, title: sendTitle.trim(), body: sendBody.trim() || undefined, type: sendType }),
+        });
+      }
+      setSendOpen(false); setSendTitle(""); setSendBody(""); setSendType("info"); setSendUserId("all");
+      setLocalNotifs(null); refetch();
+    } catch { setSendError("Network error"); }
+    finally { setSending(false); }
+  };
+
   const getEntityLink = (n: Notif) => {
     if (n.entityType === "complaint" && n.entityId) return `/complaints/${n.entityId}`;
     if (n.entityType === "meeting") return "/schedule";
@@ -162,6 +195,11 @@ export default function NotificationsPage() {
                   className="gap-1.5 bg-[#1a3a6b] hover:bg-[#1a3a6b]/90">
                   {markingAll ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCheck className="h-3.5 w-3.5" />}
                   Mark all read
+                </Button>
+              )}
+              {isAdmin && (
+                <Button size="sm" onClick={() => setSendOpen(true)} className="gap-1.5 bg-emerald-600 hover:bg-emerald-700">
+                  <Send className="h-3.5 w-3.5" /> Send Notification
                 </Button>
               )}
             </div>
@@ -333,6 +371,63 @@ export default function NotificationsPage() {
           </Card>
         </motion.div>
       </div>
+
+      {/* Send Notification Dialog (Admin only) */}
+      {isAdmin && (
+        <Dialog open={sendOpen} onOpenChange={o => { if (!o) { setSendOpen(false); setSendError(""); } }}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Send className="h-5 w-5 text-emerald-600" /> Send Notification
+              </DialogTitle>
+            </DialogHeader>
+            <form onSubmit={sendNotification} className="space-y-4">
+              <div className="space-y-1.5">
+                <Label>Send To</Label>
+                <Select value={sendUserId} onValueChange={setSendUserId}>
+                  <SelectTrigger className="border-2"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Staff Members</SelectItem>
+                    {(staffData ?? []).map(s => (
+                      <SelectItem key={s.id} value={s.id}>{s.name} ({s.role.replace(/_/g, " ")})</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Type</Label>
+                <Select value={sendType} onValueChange={setSendType}>
+                  <SelectTrigger className="border-2"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {["info", "alert", "complaint", "meeting", "bill", "task", "notice"].map(t => (
+                      <SelectItem key={t} value={t} className="capitalize">{t}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Title *</Label>
+                <Input placeholder="Notification title" value={sendTitle}
+                  onChange={e => setSendTitle(e.target.value)} className="border-2" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Message (optional)</Label>
+                <textarea placeholder="Additional details..."
+                  value={sendBody} onChange={e => setSendBody(e.target.value)}
+                  className="w-full min-h-[80px] rounded-xl border-2 border-input bg-background px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring" />
+              </div>
+              {sendError && <p className="text-sm text-destructive">{sendError}</p>}
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setSendOpen(false)}>Cancel</Button>
+                <Button type="submit" disabled={sending} className="gap-2 bg-emerald-600 hover:bg-emerald-700">
+                  {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  {sending ? "Sending..." : "Send"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   );
 }
